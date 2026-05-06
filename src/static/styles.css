@@ -1,0 +1,193 @@
+/* -------------------------------------------------------
+   Classes dinâmicas (usadas via JS ou não expressáveis
+   trivialmente com utilitários Tailwind)
+------------------------------------------------------- */
+
+/* Terminal log */
+.terminal-log {
+    font-family: 'Roboto Mono', 'Courier New', monospace;
+    background: #0f1a14;
+    color: #bbf7d0;
+    padding: 14px;
+    border-radius: 12px;
+    max-height: 320px;
+    overflow: auto;
+    border: 1px solid #166534;
+    margin: 0;
+    font-size: 0.78rem;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* Status chip e variantes aplicadas via JS */
+.status-chip {
+    display: inline-block;
+    padding: 3px 14px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #475569;
+    font-weight: 700;
+    font-size: 0.76rem;
+    letter-spacing: 0.02em;
+}
+
+.status-chip.ready_for_review {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.status-chip.failed,
+.status-chip.canceled {
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+.status-chip.stopping {
+    background: #fef3c7;
+    color: #a16207;
+}
+
+/* Botão Parar — estados ligado/desligado aplicados via JS */
+.stop-btn-off {
+    background: #e2e8f0;
+    color: #94a3b8;
+    font-weight: 700;
+    font-size: 0.875rem;
+    padding: 10px 20px;
+    border-radius: 12px;
+    border: none;
+    cursor: not-allowed;
+}
+
+.stop-btn-on {
+    background: #dc2626;
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.875rem;
+    padding: 10px 20px;
+    border-radius: 12px;
+    border: none;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.stop-btn-on:hover {
+    background: #b91c1c;
+}
+
+.stop-btn-on:active {
+    transform: translateY(1px);
+}
+
+/* Mensagens inline do formulário */
+.inline-msg {
+    display: none;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 0.84rem;
+    margin-top: 8px;
+}
+
+.inline-msg.error {
+    display: block;
+    background: #fee2e2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+}
+
+.inline-msg.info {
+    display: block;
+    background: #e0f2fe;
+    color: #075985;
+    border: 1px solid #bae6fd;
+}
+
+/* Cabeçalho de cada item de revisão — renderizado pelo JS */
+.review-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 4px;
+    flex-wrap: wrap;
+}
+
+/* Itens de revisão renderizados dinamicamente pelo JS */
+.review-item {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 10px;
+    background: #f8fafc;
+}
+
+.review-item label {
+    display: block;
+    margin-top: 10px;
+    font-weight: 600;
+    font-size: 0.75rem;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.review-item input,
+.review-item textarea {
+    width: 100%;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin-top: 4px;
+    font-size: 0.875rem;
+    background: #fff;
+    font-family: inherit;
+}
+
+.review-item input:focus,
+.review-item textarea:focus {
+    outline: none;
+    border-color: #fb7185;
+    box-shadow: 0 0 0 3px rgba(244, 63, 94, 0.12);
+}
+
+.review-repo {
+    color: #64748b;
+    font-size: 0.78rem;
+    word-break: break-all;
+    margin-top: 2px;
+}
+
+/* Resultado de publicação */
+.publish-result {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 14px;
+    background: #f8fafc;
+}
+
+.publish-result h3 {
+    margin: 0 0 8px;
+    font-size: 0.95rem;
+    font-weight: 700;
+}
+
+.publish-result .meta {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+    font-weight: 700;
+    font-size: 0.875rem;
+}
+
+.publish-result ul {
+    margin: 6px 0 0 18px;
+    padding: 0;
+}
+
+.publish-result li {
+    margin-bottom: 4px;
+    color: #64748b;
+    font-size: 0.875rem;
+}

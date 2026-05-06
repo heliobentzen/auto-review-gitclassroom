@@ -1,153 +1,173 @@
 # auto-review-gitclassroom
 
-Automated code review and grading tool for **GitHub Classroom** professors.
+Ferramenta de correcao automatizada para atividades do GitHub Classroom, com suporte a:
 
-For each assignment submission the tool will:
+1. Execucao em CLI.
+2. Fluxo Web com pre-visualizacao, revisao manual e publicacao de issues.
 
-1. **Connect** to GitHub Classroom via the REST API and retrieve the assignment
-   and all accepted student repositories.
-2. **Read** source files from each student repository.
-3. **Review** the code with an OpenAI model and produce structured feedback
-   (issues found, suggested improvements, grade 0–10).
-4. **Create a GitHub issue** in each student's repository containing the
-   AI-generated review.
-5. **Export a CSV grade report** with the student login, repository, numeric
-   grade (0–10 scale), grade comment, and issue URL.
+Para cada submissao, a ferramenta pode:
 
----
+1. Ler metadados da atividade no Classroom.
+2. Buscar codigo no repositorio do aluno.
+3. Gerar feedback estruturado com modelo local via Ollama.
+4. Publicar issue por aluno com o feedback.
+5. Exportar relatorio CSV de notas.
 
-## Requirements
+## Requisitos
 
-- Python ≥ 3.10
-- A **GitHub personal access token** with the `repo` scope (required to read
-  student repositories and create issues) and access to GitHub Classroom.
-- An **OpenAI API key**.
+1. Python 3.10+.
+2. Token GitHub com escopo repo e acesso ao Classroom.
+3. Ollama instalado e em execucao.
+4. Modelo Ollama ja baixado (exemplo: qwen2.5-coder:7b).
 
----
-
-## Installation
+## Instalacao
 
 ```bash
-# Clone the repository
 git clone https://github.com/heliobentzen/auto-review-gitclassroom.git
 cd auto-review-gitclassroom
 
-# Create and activate a virtual environment (recommended)
 python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
 
-# Install dependencies
+# Linux/macOS
+source .venv/bin/activate
+
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
+
+# Windows cmd
+.venv\Scripts\activate.bat
+
+python -m pip install --upgrade pip
 pip install -r requirements.txt
+
+ollama pull qwen2.5-coder:7b
 ```
 
----
+## Configuracao
 
-## Configuration
+Crie um arquivo .env com:
 
-Copy `.env.example` to `.env` and fill in your credentials:
+```env
+GITHUB_TOKEN=ghp_seu_token
+OLLAMA_HOST=http://localhost:11434
+OLLAMA_MODEL=qwen2.5-coder:7b
+```
+
+Observacoes:
+
+1. OLLAMA_HOST e opcional (padrao local).
+2. OLLAMA_MODEL e opcional (sobrescreve padrao da aplicacao).
+
+## Uso via CLI
 
 ```bash
-cp .env.example .env
+python -m src.main --assignment-id <ID_OU_URL> [opcoes]
 ```
 
-```
-GITHUB_TOKEN=ghp_your_token_here
-OPENAI_API_KEY=sk-your_key_here
-```
+Argumentos principais:
 
-Optionally set `OPENAI_MODEL` to override the default (`gpt-4o-mini`).
+1. --assignment-id: ID numerico ou URL da assignment do Classroom.
+2. --output: caminho do CSV (padrao: reports/grade_report.csv).
+3. --extensions: extensoes de arquivo para revisar.
+4. --model: modelo Ollama para revisao.
+5. --instruction: instrucao textual do professor.
+6. --dry-run: nao cria issue, apenas simula avaliacao.
 
----
-
-## Usage
-
-```
-python -m src.main --assignment-id <ID> [options]
-```
-
-### Required
-
-| Argument | Description |
-|---|---|
-| `--assignment-id INT` | GitHub Classroom assignment ID |
-
-### Optional
-
-| Argument | Default | Description |
-|---|---|---|
-| `--output PATH` | `reports/grade_report.csv` | Output CSV path |
-| `--extensions EXT …` | common code files | File extensions to review (e.g. `--extensions .py .js`) |
-| `--model MODEL` | `gpt-4o-mini` | OpenAI model |
-| `--dry-run` | off | Analyse code but **skip** issue creation |
-
-### Example
+Exemplos:
 
 ```bash
-# Full run (creates issues + report)
 python -m src.main --assignment-id 12345
-
-# Dry run — see grades without creating issues
-python -m src.main --assignment-id 12345 --dry-run --output /tmp/grades.csv
-
-# Review only Python files, use GPT-4o
-python -m src.main --assignment-id 12345 --extensions .py --model gpt-4o
+python -m src.main --assignment-id https://classroom.github.com/classrooms/260986872-ifpepalmares-mobile-3a/assignments/atividade-de-navega-o-de-telas
+python -m src.main --assignment-id 12345 --dry-run
+python -m src.main --assignment-id 12345 --instruction "Avaliar navegacao entre telas" --dry-run
 ```
 
-### Finding the assignment ID
+## Uso via Web
 
-1. Open your classroom on <https://classroom.github.com>.
-2. Navigate to **Assignments** and open the assignment.
-3. The assignment ID is the number at the end of the URL, e.g.
-   `https://classroom.github.com/classrooms/123/assignments/`**`12345`**.
+```bash
+python -m src.webapp
+```
 
----
+Abra:
 
-## Output
+```text
+http://127.0.0.1:8000
+```
 
-### Grade report CSV
+Fluxo recomendado:
 
-The report is saved to `reports/grade_report.csv` (configurable via `--output`):
+1. Informar URL (ou ID) da assignment.
+2. Informar instrucoes da atividade.
+3. Selecionar nivel de analise.
+4. Iniciar previa e acompanhar progresso.
+5. Revisar/editar comentarios por aluno.
+6. Salvar para publicar issues.
 
-| student | repository | grade | grade_comment | issue_url |
-|---|---|---|---|---|
-| alice | org/alice-lab1 | 8.5 | Solid work, minor style issues. | https://… |
-| bob | org/bob-lab1 | 6.0 | Missing error handling. | https://… |
+Durante a publicacao, a interface exibe resumo de auditoria:
 
-### GitHub issues
+1. created: issues criadas.
+2. skipped: ignoradas (fora do job, sem payload, ja publicadas).
+3. failed: falhas de criacao por aluno.
 
-An issue is created in each student's repository with three sections:
+## Saidas
 
-- **Summary** — overall impression
-- **Issues Found** — specific problems identified
-- **Suggested Improvements** — actionable recommendations
+1. CSV com colunas: student, repository, grade, grade_comment, issue_url.
+2. Issue no repositorio do aluno com secoes:
+   - Resumo
+   - Problemas Encontrados
+   - Melhorias Sugeridas
 
----
+## Arquitetura (visao geral)
 
-## Running tests
+1. src/config.py: configuracao centralizada por variavel de ambiente.
+2. src/classroom_client.py: cliente REST do GitHub Classroom.
+3. src/github_client.py: leitura de arquivos e criacao de issue via PyGithub.
+4. src/reviewer.py: integracao com Ollama e parsing de resposta.
+5. src/reporter.py: consolidacao e exportacao CSV.
+6. src/main.py: orquestracao da CLI.
+7. src/webapp.py: fluxo web, jobs em memoria e publicacao manual.
+
+## Dependencias principais
+
+1. PyGithub>=2.9.1
+2. python-dotenv>=1.1.0
+3. requests>=2.32.3
+4. Flask>=3.1.1
+5. pytest>=8.4.2
+
+## Testes
 
 ```bash
 pytest
 ```
 
----
+Ou sem ativar ambiente:
 
-## Project structure
-
+```bash
+.venv\Scripts\python -m pytest
 ```
+
+## Estrutura do projeto
+
+```text
 auto-review-gitclassroom/
 ├── src/
-│   ├── classroom_client.py   # GitHub Classroom REST API client
-│   ├── github_client.py      # PyGithub wrapper (file reading + issue creation)
-│   ├── reviewer.py           # OpenAI-powered code reviewer
-│   ├── reporter.py           # CSV grade report generator
-│   └── main.py               # CLI entry point
+│   ├── __init__.py
+│   ├── classroom_client.py
+│   ├── config.py
+│   ├── github_client.py
+│   ├── main.py
+│   ├── reporter.py
+│   ├── reviewer.py
+│   └── webapp.py
 ├── tests/
+│   ├── __init__.py
 │   ├── test_classroom_client.py
 │   ├── test_github_client.py
-│   ├── test_reviewer.py
+│   ├── test_main.py
 │   ├── test_reporter.py
-│   └── test_main.py
-├── .env.example
+│   ├── test_reviewer.py
+│   └── test_webapp.py
 ├── requirements.txt
 └── README.md
 ```

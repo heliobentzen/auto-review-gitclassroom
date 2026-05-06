@@ -35,7 +35,7 @@ _FAKE_REVIEW = {
 @pytest.fixture
 def mock_env(monkeypatch):
     monkeypatch.setenv("GITHUB_TOKEN", "fake-github-token")
-    monkeypatch.setenv("OPENAI_API_KEY", "fake-openai-key")
+    monkeypatch.setenv("OLLAMA_HOST", "http://localhost:11434")
 
 
 @pytest.fixture
@@ -70,17 +70,112 @@ def mock_reviewer(mocker):
 
 
 class TestMainCLI:
-    def test_missing_github_token_exits(self, monkeypatch, mocker):
-        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
-        monkeypatch.setenv("OPENAI_API_KEY", "key")
+    def test_classroom_url_is_resolved_to_assignment_id(
+        self,
+        mock_env,
+        mock_classroom,
+        mock_github,
+        mock_reviewer,
+        mocker,
+        tmp_path,
+    ):
+        mocker.patch("src.main.load_dotenv")
+        mock_classroom.list_assignments.return_value = [
+            {"id": 777, "title": "Atividade de Navegacao de Telas"}
+        ]
+        output = str(tmp_path / "report.csv")
+        main(
+            [
+                "--assignment-id",
+                "https://classroom.github.com/classrooms/260986872-ifpepalmares-mobile-3a/assignments/atividade-de-navega-o-de-telas",
+                "--dry-run",
+                "--output",
+                output,
+            ]
+        )
+        mock_classroom.get_assignment.assert_called_once_with(777)
+        mock_classroom.list_accepted_assignments.assert_called_once_with(777)
+
+    def test_invalid_assignment_id_input_exits(
+        self,
+        mock_env,
+        mock_classroom,
+        mock_github,
+        mock_reviewer,
+        mocker,
+    ):
         mocker.patch("src.main.load_dotenv")
         with pytest.raises(SystemExit) as exc_info:
-            main(["--assignment-id", "10"])
+            main(["--assignment-id", "invalid-value"])
         assert exc_info.value.code == 1
 
-    def test_missing_openai_key_exits(self, monkeypatch, mocker):
-        monkeypatch.setenv("GITHUB_TOKEN", "token")
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    def test_classroom_url_uses_slug_when_numeric_classroom_id_is_not_api_id(
+        self,
+        mock_env,
+        mock_classroom,
+        mock_github,
+        mock_reviewer,
+        mocker,
+        tmp_path,
+    ):
+        mocker.patch("src.main.load_dotenv")
+        mock_classroom.get_classroom.side_effect = RuntimeError("not found")
+        mock_classroom.list_classrooms.return_value = [
+            {"id": 316005, "name": "ifpepalmares-mobile-3a"}
+        ]
+        mock_classroom.list_assignments.return_value = [
+            {"id": 888, "title": "Atividade de Navegacao de Telas"}
+        ]
+        output = str(tmp_path / "report.csv")
+
+        main(
+            [
+                "--assignment-id",
+                "https://classroom.github.com/classrooms/260986872-ifpepalmares-mobile-3a/assignments/atividade-de-navega-o-de-telas",
+                "--dry-run",
+                "--output",
+                output,
+            ]
+        )
+
+        mock_classroom.list_assignments.assert_called_once_with(316005)
+        mock_classroom.get_assignment.assert_called_once_with(888)
+
+    def test_classroom_resolution_prefers_exact_slug_over_similar_classroom(
+        self,
+        mock_env,
+        mock_classroom,
+        mock_github,
+        mock_reviewer,
+        mocker,
+        tmp_path,
+    ):
+        mocker.patch("src.main.load_dotenv")
+        mock_classroom.get_classroom.side_effect = RuntimeError("not found")
+        mock_classroom.list_classrooms.return_value = [
+            {"id": 316001, "name": "ifpepalmares-mobile-3b"},
+            {"id": 316005, "name": "ifpepalmares-mobile-3a"},
+        ]
+        mock_classroom.list_assignments.return_value = [
+            {"id": 970130, "title": "Atividade de Navegacao de Telas"}
+        ]
+        output = str(tmp_path / "report.csv")
+
+        main(
+            [
+                "--assignment-id",
+                "https://classroom.github.com/classrooms/260986872-ifpepalmares-mobile-3a/assignments/atividade-de-navega-o-de-telas",
+                "--dry-run",
+                "--output",
+                output,
+            ]
+        )
+
+        mock_classroom.list_assignments.assert_called_once_with(316005)
+        mock_classroom.get_assignment.assert_called_once_with(970130)
+
+    def test_missing_github_token_exits(self, monkeypatch, mocker):
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         mocker.patch("src.main.load_dotenv")
         with pytest.raises(SystemExit) as exc_info:
             main(["--assignment-id", "10"])

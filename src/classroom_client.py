@@ -15,8 +15,9 @@ class ClassroomClient:
 
     BASE_URL = "https://api.github.com"
 
-    def __init__(self, token: str) -> None:
+    def __init__(self, token: str, timeout: int = 30) -> None:
         self.session = requests.Session()
+        self.timeout = timeout
         self.session.headers.update(
             {
                 "Authorization": f"Bearer {token}",
@@ -25,45 +26,42 @@ class ClassroomClient:
             }
         )
 
-    def list_classrooms(self) -> list[dict]:
-        """Return all classrooms accessible to the authenticated user."""
-        resp = self.session.get(f"{self.BASE_URL}/classrooms")
-        resp.raise_for_status()
-        return resp.json()
-
-    def get_classroom(self, classroom_id: int) -> dict:
-        """Return a single classroom by ID."""
-        resp = self.session.get(f"{self.BASE_URL}/classrooms/{classroom_id}")
-        resp.raise_for_status()
-        return resp.json()
-
-    def list_assignments(self, classroom_id: int) -> list[dict]:
-        """Return all assignments for a classroom."""
+    def _get_json(self, path: str, *, params: dict | None = None) -> list[dict] | dict:
         resp = self.session.get(
-            f"{self.BASE_URL}/classrooms/{classroom_id}/assignments"
+            f"{self.BASE_URL}{path}",
+            params=params,
+            timeout=self.timeout,
         )
         resp.raise_for_status()
         return resp.json()
 
+    def list_classrooms(self) -> list[dict]:
+        """Return all classrooms accessible to the authenticated user."""
+        return self._get_json("/classrooms")  # type: ignore[return-value]
+
+    def get_classroom(self, classroom_id: int) -> dict:
+        """Return a single classroom by ID."""
+        return self._get_json(f"/classrooms/{classroom_id}")  # type: ignore[return-value]
+
+    def list_assignments(self, classroom_id: int) -> list[dict]:
+        """Return all assignments for a classroom."""
+        return self._get_json(f"/classrooms/{classroom_id}/assignments")  # type: ignore[return-value]
+
     def get_assignment(self, assignment_id: int) -> dict:
         """Return a single assignment by ID."""
-        resp = self.session.get(f"{self.BASE_URL}/assignments/{assignment_id}")
-        resp.raise_for_status()
-        return resp.json()
+        return self._get_json(f"/assignments/{assignment_id}")  # type: ignore[return-value]
 
     def list_accepted_assignments(self, assignment_id: int) -> list[dict]:
         """Return all student submissions for an assignment (auto-paginated)."""
         results: list[dict] = []
         page = 1
         while True:
-            resp = self.session.get(
-                f"{self.BASE_URL}/assignments/{assignment_id}/accepted_assignments",
+            data = self._get_json(
+                f"/assignments/{assignment_id}/accepted_assignments",
                 params={"page": page, "per_page": 100},
             )
-            resp.raise_for_status()
-            data: list[dict] = resp.json()
             if not data:
                 break
-            results.extend(data)
+            results.extend(data)  # type: ignore[arg-type]
             page += 1
         return results
