@@ -89,10 +89,13 @@ class TestCodeReviewer:
         system_content = call_args.kwargs["json"]["messages"][0]["content"]
         user_content = call_args.kwargs["json"]["messages"][1]["content"]
 
-        assert "Estrutura e Sintaxe: 30%" in system_content
-        assert "Cumprimento dos Requisitos: 70%" in system_content
+        assert "Estrutura e Sintaxe (30% - 3,0 pts)" in system_content
+        assert "Cumprimento dos Requisitos (70% - 7,0 pts)" in system_content
         assert "não geram pontos adicionais" in user_content
         assert "Nível de exigência: nível de ensino médio" in user_content
+        assert "desconto proporcional" in system_content
+        assert "Liste no máximo 3 problemas principais" in system_content
+        assert "priorize os problemas funcionais" in user_content
 
     def test_review_prompt_accepts_higher_education_expectation(self, mock_ollama):
         reviewer = CodeReviewer()

@@ -1,6 +1,11 @@
 let currentJobId = null;
 let pollTimer = null;
 let autoScrollLogs = true;
+const AVAILABLE_EXTENSIONS = [
+    ".py", ".js", ".ts", ".tsx", ".java", ".kt", ".cs", ".go", ".cpp",
+    ".c", ".rb", ".php", ".html", ".css", ".scss", ".sh", ".rs", ".swift",
+];
+let selectedExtensions = new Set([".py", ".js", ".ts", ".tsx", ".java", ".kt", ".cs", ".go", ".cpp"]);
 const APP_CONFIG = window.__APP_CONFIG__ || {};
 const API_BASE = APP_CONFIG.apiBase || "/api";
 
@@ -69,19 +74,93 @@ function esc(str) {
     return (str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+function getSelectedExtensions() {
+    return Array.from(selectedExtensions);
+}
+
+function updateExtensionsSummary() {
+    const summary = document.getElementById("extensionsSummary");
+    if (!summary) return;
+    const selected = getSelectedExtensions();
+    summary.textContent = selected.length
+        ? `${selected.length} selecionada(s): ${selected.join(" ")}`
+        : "Selecionar extensões";
+}
+
+function renderExtensionsOptions() {
+    const container = document.getElementById("extensionsList");
+    if (!container) return;
+    container.innerHTML = "";
+
+    AVAILABLE_EXTENSIONS.forEach((extension) => {
+        const label = document.createElement("label");
+        label.className = "flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50 text-sm text-slate-700 cursor-pointer";
+
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.value = extension;
+        input.className = "accent-rose-600";
+        input.checked = selectedExtensions.has(extension);
+        input.addEventListener("change", () => {
+            if (input.checked) {
+                selectedExtensions.add(extension);
+            } else {
+                selectedExtensions.delete(extension);
+            }
+            updateExtensionsSummary();
+        });
+
+        const span = document.createElement("span");
+        span.textContent = extension;
+
+        label.appendChild(input);
+        label.appendChild(span);
+        container.appendChild(label);
+    });
+}
+
+function setupExtensionsDropdown() {
+    const btn = document.getElementById("extensionsDropdownBtn");
+    const menu = document.getElementById("extensionsDropdownMenu");
+    if (!btn || !menu) return;
+
+    renderExtensionsOptions();
+    updateExtensionsSummary();
+
+    btn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        menu.classList.toggle("hidden");
+    });
+
+    menu.addEventListener("click", (event) => {
+        event.stopPropagation();
+    });
+
+    document.addEventListener("click", () => {
+        menu.classList.add("hidden");
+    });
+}
+
 async function startJob() {
     const assignment = document.getElementById("assignment").value.trim();
     if (!assignment) {
         showFormMessage("Informe a URL ou ID da assignment para iniciar a prévia.", "error");
         return;
     }
+
+    const extensions = getSelectedExtensions();
+    if (!extensions.length) {
+        showFormMessage("Selecione ao menos uma extensão para iniciar a prévia.", "error");
+        return;
+    }
+
     showFormMessage("");
 
     const body = {
         assignment,
         instruction: document.getElementById("instruction").value.trim(),
         model: document.getElementById("model").value.trim(),
-        extensions: document.getElementById("extensions").value.trim().split(/\s+/).filter(Boolean),
+        extensions,
         analysis_level: document.getElementById("analysisLevel").value,
     };
 
@@ -267,6 +346,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const clearLogsBtn = document.getElementById("clearLogsBtn");
     const copyLogsBtn = document.getElementById("copyLogsBtn");
     const autoScrollInput = document.getElementById("autoScrollLogs");
+    setupExtensionsDropdown();
     if (startBtn) startBtn.addEventListener("click", startJob);
     if (stopBtn) stopBtn.addEventListener("click", stopJob);
     if (saveBtn) saveBtn.addEventListener("click", saveIssues);

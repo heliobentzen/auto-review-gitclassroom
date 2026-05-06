@@ -20,7 +20,10 @@ DIRETRIZES DE AVALIAÇÃO:
    - Cumprimento dos Requisitos (70% - 7,0 pts): Desconte proporcionalmente para cada exigência ausente ou implementada com estrutura incorreta (ex: usar contêiner vertical para layout lado a lado).
 4. Recursos Extras: Se o aluno implementar itens não solicitados (ex: navegação onde pedia-se apenas tela estática), elogie no feedback, mas NUNCA compense pontos perdidos no básico nem exceda a nota máxima (10).
 5. Omissões Permitidas: NÃO penalize ausência de arquitetura avançada, clean code, testes ou MVVM/MVI, salvo se explicitamente exigido.
-6. Feedback: Seja didático e encorajador. Relacione cada erro diretamente à instrução. Se a instrução do professor for ambígua/incompleta, seja conservador no desconto da nota.
+6. Proporcionalidade: Se o aluno acertou a maior parte da atividade e existe apenas uma ou poucas falhas pontuais, aplique desconto proporcional. Não zere ou derrube a nota para faixas muito baixas quando a entrega estiver majoritariamente correta.
+7. Prioridade dos Achados: Destaque primeiro falhas funcionais e de requisitos. Itens de clean code, código não utilizado ou organização só devem aparecer como observações secundárias quando não forem o principal problema da atividade.
+8. Concisão: Liste no máximo 3 problemas principais. Se houver apenas 1 problema relevante, concentre a issue nele em vez de inflar a análise com observações menores.
+9. Feedback: Seja didático e encorajador. Relacione cada erro diretamente à instrução. Se a instrução do professor for ambígua/incompleta, seja conservador no desconto da nota.
 
 SAÍDA EXIGIDA:
 Retorne EXCLUSIVAMENTE um JSON válido, sem uso de blocos Markdown (```json), contendo as chaves exatas:
@@ -30,6 +33,12 @@ Retorne EXCLUSIVAMENTE um JSON válido, sem uso de blocos Markdown (```json), co
    "grade": <número float de 0.0 a 10.0>,
    "grade_comment": "<comentário curto e didático justificando a nota com base na rubrica>"
 }
+
+Estilo esperado da resposta:
+- Pareça uma issue real de professor, objetiva e útil para o aluno.
+- No "## Problemas Encontrados", priorize 1 a 3 pontos principais, em ordem de impacto.
+- No "## Melhorias Sugeridas", proponha correções diretas e práticas.
+- Se houver código não utilizado ou ajuste menor, cite isso somente depois do problema funcional principal.
 """
 
 class CodeReviewer:
@@ -104,6 +113,8 @@ class CodeReviewer:
             "- Estrutura e Sintaxe: 30% da nota (0 a 3,0 pontos).\n"
             "- Cumprimento dos Requisitos: 70% da nota (0 a 7,0 pontos).\n"
             "- Recursos extras não geram pontos adicionais e não compensam requisitos faltantes.\n\n"
+            "Ao encontrar poucas falhas pontuais em uma entrega majoritariamente correta, aplique desconto proporcional e mantenha a nota coerente com o conjunto da solução.\n\n"
+            "Na issue final, priorize os problemas funcionais e liste no máximo 3 achados principais. Se existir apenas um erro central, concentre a análise nele. Observações de clean code ou código não utilizado devem aparecer apenas como secundárias.\n\n"
             f"Nível de exigência: {expectation_level}\n"
             f"Repositório: {repo_name}\n\n"
             f"Código do aluno:\n\n{code_block}"

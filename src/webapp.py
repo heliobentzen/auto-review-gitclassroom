@@ -21,7 +21,7 @@ from flask import Flask, jsonify, request
 
 from .classroom_client import ClassroomClient
 from .config import AppConfig
-from .github_client import GitHubClient
+from .github_client import DEFAULT_CODE_EXTENSIONS, GitHubClient
 from .main import _resolve_assignment_id
 from .reviewer import CodeReviewer
 
@@ -148,7 +148,7 @@ def _create_job(payload: dict[str, Any]) -> str:
     instruction = str(payload.get("instruction", "")).strip()
     analysis_level = str(payload.get("analysis_level", "ensino_medio")).strip()
     model = str(payload.get("model", "qwen2.5-coder:1.5b")).strip()
-    extensions = payload.get("extensions") or [".kt"]
+    extensions = payload.get("extensions") or list(DEFAULT_CODE_EXTENSIONS)
 
     job_id = str(uuid.uuid4())
     with JOBS_LOCK:
