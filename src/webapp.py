@@ -49,6 +49,7 @@ class JobState:
     assignment: str
     instruction: str
     analysis_level: str
+    provider: str
     model: str
     extensions: list[str]
     status: str = "running"
@@ -147,7 +148,23 @@ def _create_job(payload: dict[str, Any]) -> str:
     assignment = str(payload.get("assignment", "")).strip()
     instruction = str(payload.get("instruction", "")).strip()
     analysis_level = str(payload.get("analysis_level", "ensino_medio")).strip()
-    model = str(payload.get("model", "qwen2.5-coder:1.5b")).strip()
+    raw_provider = str(payload.get("provider", "")).strip().lower()
+    raw_model = str(payload.get("model", "")).strip()
+
+    if raw_provider in {"ollama", "gemini"}:
+        provider = raw_provider
+    elif raw_model.lower().startswith("gemini"):
+        provider = "gemini"
+    else:
+        provider = "ollama"
+
+    default_model = "qwen2.5-coder:1.5b" if provider == "ollama" else "gemini-1.5-flash"
+    model = raw_model or default_model
+
+    # Se o modelo for Gemini, force o roteamento para Gemini para evitar erro em /api/chat.
+    if model.lower().startswith("gemini"):
+        provider = "gemini"
+
     extensions = payload.get("extensions") or list(DEFAULT_CODE_EXTENSIONS)
 
     job_id = str(uuid.uuid4())
@@ -157,6 +174,7 @@ def _create_job(payload: dict[str, Any]) -> str:
             assignment=assignment,
             instruction=instruction,
             analysis_level=analysis_level,
+            provider=provider,
             model=model,
             extensions=extensions,
         )
@@ -273,18 +291,29 @@ def _run_preview(job_id: str) -> None:
         return
 
     ollama_host = config.ollama_host
+    gemini_api_key = config.gemini_api_key
 
     with JOBS_LOCK:
         job = JOBS[job_id]
         assignment = job.assignment
         instruction = job.instruction
         analysis_level = job.analysis_level
+        provider = job.provider
         model = job.model
         extensions = job.extensions
 
+    if provider == "gemini" and not gemini_api_key:
+        _set_job_error(job_id, "GEMINI_API_KEY não configurado para usar Gemini.")
+        return
+
     classroom_client = ClassroomClient(token)
     github_client = GitHubClient(token)
-    reviewer = CodeReviewer(model=model, base_url=ollama_host)
+    reviewer = CodeReviewer(
+        provider=provider,
+        model=model,
+        base_url=ollama_host,
+        gemini_api_key=gemini_api_key,
+    )
 
     try:
         assignment_id = _resolve_assignment_id(assignment, classroom_client)

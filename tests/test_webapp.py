@@ -11,6 +11,7 @@ def _new_job() -> str:
             assignment="10",
             instruction="",
             analysis_level="ensino_medio",
+            provider="ollama",
             model="qwen2.5-coder:1.5b",
             extensions=[".kt"],
             status="ready_for_review",
@@ -186,3 +187,19 @@ def test_api_save_reports_failed_issue_creation(monkeypatch, mocker):
     assert data["failed"] == 1
     assert data["failed_details"][0]["student"] == "alice"
     assert "sem permissao" in data["failed_details"][0]["error"]
+
+
+def test_create_job_infers_gemini_provider_from_model():
+    job_id = webapp._create_job(
+        {
+            "assignment": "10",
+            "instruction": "Teste",
+            "model": "gemini-1.5-flash",
+            "extensions": [".py"],
+        }
+    )
+
+    with webapp.JOBS_LOCK:
+        job = webapp.JOBS[job_id]
+        assert job.provider == "gemini"
+        assert job.model == "gemini-1.5-flash"

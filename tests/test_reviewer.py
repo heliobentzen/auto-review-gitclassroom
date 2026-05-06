@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
+import requests
 
 from src.reviewer import CodeReviewer
 
@@ -76,6 +77,56 @@ class TestCodeReviewer:
         reviewer = CodeReviewer(base_url="http://ollama.local:11434")
         reviewer.review("owner/repo", {"main.py": "pass"})
         assert mock_ollama.call_args.args[0] == "http://ollama.local:11434/api/chat"
+
+    def test_review_falls_back_to_ollama_generate_when_chat_is_404(self, mocker):
+        chat_response = mocker.MagicMock()
+        chat_error = requests.HTTPError("404 Not Found")
+        chat_error.response = mocker.MagicMock(status_code=404)
+        chat_response.raise_for_status.side_effect = chat_error
+
+        generate_response = mocker.MagicMock()
+        generate_response.json.return_value = {"response": json.dumps(_SAMPLE_REVIEW)}
+
+        mock_post = mocker.patch(
+            "src.reviewer.requests.post",
+            side_effect=[chat_response, generate_response],
+        )
+
+        reviewer = CodeReviewer(base_url="http://localhost:11434")
+        result = reviewer.review("owner/repo", {"main.py": "print('ok')"})
+
+        assert result["grade"] == _SAMPLE_REVIEW["grade"]
+        assert mock_post.call_count == 2
+        assert mock_post.call_args_list[0].args[0].endswith("/api/chat")
+        assert mock_post.call_args_list[1].args[0].endswith("/api/generate")
+
+    def test_review_uses_gemini_provider(self, mocker):
+        gemini_response = mocker.MagicMock()
+        gemini_response.json.return_value = {
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [{"text": json.dumps(_SAMPLE_REVIEW)}],
+                    }
+                }
+            ]
+        }
+        mock_post = mocker.patch("src.reviewer.requests.post", return_value=gemini_response)
+
+        reviewer = CodeReviewer(
+            provider="gemini",
+            model="gemini-1.5-flash",
+            gemini_api_key="fake-key",
+        )
+        result = reviewer.review("owner/repo", {"main.py": "print('ok')"})
+
+        assert result["issue_title"] == _SAMPLE_REVIEW["issue_title"]
+        assert "generativelanguage.googleapis.com" in mock_post.call_args.args[0]
+
+    def test_review_gemini_requires_api_key(self):
+        reviewer = CodeReviewer(provider="gemini", model="gemini-1.5-flash")
+        with pytest.raises(ValueError, match="GEMINI_API_KEY"):
+            reviewer.review("owner/repo", {"main.py": "print('ok')"})
 
     def test_review_prompt_includes_weighted_rubric(self, mock_ollama):
         reviewer = CodeReviewer()

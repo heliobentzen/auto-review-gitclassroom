@@ -10,6 +10,8 @@ Required environment variables (or .env file):
 Optional environment variables:
     OLLAMA_HOST    — Ollama server URL (default: http://localhost:11434)
     OLLAMA_MODEL   — Ollama model name (default: qwen2.5-coder:7b)
+    GEMINI_API_KEY — Gemini API key (required only when --provider gemini)
+    GEMINI_MODEL   — Gemini model name (default: gemini-1.5-flash)
 """
 
 from __future__ import annotations
@@ -196,9 +198,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--provider",
+        choices=["ollama", "gemini"],
+        default="ollama",
+        help="LLM provider to use for code reviews.",
+    )
+    parser.add_argument(
         "--model",
-        default=os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b"),
-        help="Ollama model to use for code reviews.",
+        default="",
+        help="Model name for selected provider (e.g. qwen2.5-coder:7b or gemini-1.5-flash).",
     )
     parser.add_argument(
         "--instruction",
@@ -221,6 +229,16 @@ def main(argv: list[str] | None = None) -> None:
 
     github_token = config.github_token
     ollama_host = config.ollama_host
+    gemini_api_key = config.gemini_api_key
+    provider = args.provider
+
+    model = args.model.strip()
+    if not model:
+        model = config.ollama_model if provider == "ollama" else config.gemini_model
+
+    if provider == "gemini" and not gemini_api_key:
+        _log_error("Error: GEMINI_API_KEY is not set for provider 'gemini'.")
+        sys.exit(1)
 
     if not github_token:
         _log_error("Error: GITHUB_TOKEN is not set.")
@@ -235,7 +253,12 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(1)
 
     github_client = GitHubClient(github_token)
-    reviewer = CodeReviewer(model=args.model, base_url=ollama_host)
+    reviewer = CodeReviewer(
+        provider=provider,
+        model=model,
+        base_url=ollama_host,
+        gemini_api_key=gemini_api_key,
+    )
     reporter = GradeReporter()
 
     # ------------------------------------------------------------------ #

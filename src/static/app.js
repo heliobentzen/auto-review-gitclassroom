@@ -1,13 +1,18 @@
 let currentJobId = null;
 let pollTimer = null;
 let autoScrollLogs = true;
+const renderedDraftKeys = new Set();
 const AVAILABLE_EXTENSIONS = [
     ".py", ".js", ".ts", ".tsx", ".java", ".kt", ".cs", ".go", ".cpp",
     ".c", ".rb", ".php", ".html", ".css", ".scss", ".sh", ".rs", ".swift",
 ];
-let selectedExtensions = new Set([".py", ".js", ".ts", ".tsx", ".java", ".kt", ".cs", ".go", ".cpp"]);
+let selectedExtensions = new Set();
 const APP_CONFIG = window.__APP_CONFIG__ || {};
 const API_BASE = APP_CONFIG.apiBase || "/api";
+const DEFAULT_MODELS_BY_PROVIDER = {
+    ollama: "qwen2.5-coder:1.5b",
+    gemini: "gemini-1.5-flash",
+};
 
 async function apiRequest(path, options = {}) {
     const res = await fetch(`${API_BASE}${path}`, options);
@@ -72,6 +77,66 @@ function showFormMessage(text, type = "error") {
 
 function esc(str) {
     return (str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function draftKey(draft) {
+    return `${draft.repository || ""}::${draft.student || ""}`;
+}
+
+function findDraftCardByKey(key) {
+    const cards = document.querySelectorAll(".review-item[data-draft-key]");
+    for (const card of cards) {
+        if (card.dataset.draftKey === key) {
+            return card;
+        }
+    }
+    return null;
+}
+
+function clearRenderedDrafts() {
+    renderedDraftKeys.clear();
+    const container = document.getElementById("drafts");
+    if (container) {
+        container.innerHTML = "";
+    }
+}
+
+function setSaveButtonEnabled(enabled) {
+    const btn = document.getElementById("saveBtn");
+    if (!btn) return;
+    btn.disabled = !enabled;
+    btn.title = enabled
+        ? ""
+        : "Aguarde o fim da análise para liberar a publicação das issues.";
+}
+
+function setPublishProgress({ visible, percent = 0, text = "", indeterminate = false }) {
+    const wrapper = document.getElementById("publishProgress");
+    const fill = document.getElementById("publishProgressFill");
+    const label = document.getElementById("publishProgressLabel");
+    const value = document.getElementById("publishProgressValue");
+    if (!wrapper || !fill || !label || !value) return;
+
+    if (!visible) {
+        wrapper.style.display = "none";
+        fill.classList.remove("indeterminate");
+        fill.style.width = "0%";
+        label.textContent = "Preparando publicação...";
+        value.textContent = "0%";
+        return;
+    }
+
+    wrapper.style.display = "block";
+    if (indeterminate) {
+        fill.classList.add("indeterminate");
+    } else {
+        fill.classList.remove("indeterminate");
+    }
+
+    const clamped = Math.max(0, Math.min(100, Number(percent) || 0));
+    fill.style.width = `${clamped}%`;
+    label.textContent = text || "Publicando...";
+    value.textContent = `${Math.round(clamped)}%`;
 }
 
 function getSelectedExtensions() {
@@ -156,9 +221,11 @@ async function startJob() {
 
     showFormMessage("");
 
+    const provider = document.getElementById("provider").value;
     const body = {
         assignment,
         instruction: document.getElementById("instruction").value.trim(),
+        provider,
         model: document.getElementById("model").value.trim(),
         extensions,
         analysis_level: document.getElementById("analysisLevel").value,
@@ -178,6 +245,9 @@ async function startJob() {
     currentJobId = data.job_id;
     const logs = document.getElementById("logs");
     logs.textContent = "";
+    clearRenderedDrafts();
+    setSaveButtonEnabled(false);
+    setPublishProgress({ visible: false });
     document.getElementById("publishResult").style.display = "none";
     setStopBtnState(true);
     document.getElementById("reviewCard").style.display = "none";
@@ -185,6 +255,22 @@ async function startJob() {
     pollTimer = setInterval(fetchStatus, 1500);
     await fetchStatus();
     setButtonLoading("startBtn", false, "");
+}
+
+function setupProviderSelector() {
+    const providerEl = document.getElementById("provider");
+    const modelEl = document.getElementById("model");
+    if (!providerEl || !modelEl) return;
+
+    providerEl.addEventListener("change", () => {
+        const selected = providerEl.value;
+        const defaultModel = DEFAULT_MODELS_BY_PROVIDER[selected] || "";
+        const currentValue = (modelEl.value || "").trim();
+        const knownDefault = Object.values(DEFAULT_MODELS_BY_PROVIDER).includes(currentValue);
+        if (!currentValue || knownDefault) {
+            modelEl.value = defaultModel;
+        }
+    });
 }
 
 async function stopJob() {
@@ -226,8 +312,15 @@ async function fetchStatus() {
     const running = data.status === "running" || data.status === "stopping";
     setStopBtnState(running);
 
+    const drafts = data.drafts || [];
+    if (drafts.length > 0) {
+        document.getElementById("reviewCard").style.display = "block";
+        renderDrafts(drafts);
+    }
+
+    setSaveButtonEnabled(data.status === "ready_for_review" && drafts.length > 0);
+
     if (data.status === "ready_for_review") {
-        renderDrafts(data.drafts || []);
         document.getElementById("reviewCard").style.display = "block";
         clearInterval(pollTimer);
         pollTimer = null;
@@ -241,10 +334,16 @@ async function fetchStatus() {
 
 function renderDrafts(drafts) {
     const container = document.getElementById("drafts");
-    container.innerHTML = "";
-    drafts.forEach((d, idx) => {
+    drafts.forEach((d) => {
+        const key = draftKey(d);
+        if (renderedDraftKeys.has(key)) {
+            return;
+        }
+
+        renderedDraftKeys.add(key);
         const div = document.createElement("div");
         div.className = "review-item";
+        div.dataset.draftKey = key;
         div.innerHTML = `
       <div class="review-head">
         <strong>${esc(d.student)}</strong>
@@ -253,9 +352,9 @@ function renderDrafts(drafts) {
       <div class="review-repo">${esc(d.repository)}</div>
       <div style="margin-top:6px;"><strong>Comentário:</strong> ${esc(d.grade_comment || "")}</div>
       <label>Título da issue</label>
-      <input id="title_${idx}" value="${esc(d.issue_title || "")}" />
+            <input class="draft-title" value="${esc(d.issue_title || "")}" />
       <label>Corpo da issue (Markdown)</label>
-      <textarea id="body_${idx}" rows="8">${esc(d.issue_body || "")}</textarea>
+            <textarea class="draft-body" rows="8">${esc(d.issue_body || "")}</textarea>
     `;
         container.appendChild(div);
     });
@@ -263,6 +362,12 @@ function renderDrafts(drafts) {
 
 async function saveIssues() {
     if (!currentJobId) return;
+    setPublishProgress({
+        visible: true,
+        percent: 10,
+        text: "Preparando dados para publicação...",
+        indeterminate: false,
+    });
     setButtonLoading("saveBtn", true, "Publicando...");
     let statusData;
     try {
@@ -274,17 +379,42 @@ async function saveIssues() {
             failed: 1,
             failed_details: [{ student: "-", repository: "-", error: err.message || "Erro ao obter status" }],
         });
+        setPublishProgress({
+            visible: true,
+            percent: 100,
+            text: "Falha ao preparar publicação.",
+            indeterminate: false,
+        });
         setButtonLoading("saveBtn", false, "");
         return;
     }
     const drafts = statusData.drafts || [];
+    setPublishProgress({
+        visible: true,
+        percent: 25,
+        text: `Preparando ${drafts.length} issue(s)...`,
+        indeterminate: false,
+    });
 
-    const payload = drafts.map((d, idx) => ({
-        repository: d.repository,
-        student: d.student,
-        issue_title: document.getElementById(`title_${idx}`).value,
-        issue_body: document.getElementById(`body_${idx}`).value,
-    }));
+    const payload = drafts.map((d) => {
+        const key = draftKey(d);
+        const card = findDraftCardByKey(key);
+        const issueTitle = card?.querySelector(".draft-title")?.value || d.issue_title || "";
+        const issueBody = card?.querySelector(".draft-body")?.value || d.issue_body || "";
+        return {
+            repository: d.repository,
+            student: d.student,
+            issue_title: issueTitle,
+            issue_body: issueBody,
+        };
+    });
+
+    setPublishProgress({
+        visible: true,
+        percent: 55,
+        text: "Publicando issues no GitHub...",
+        indeterminate: true,
+    });
 
     let data;
     try {
@@ -300,10 +430,22 @@ async function saveIssues() {
                 error: err.message || "Erro ao salvar issues",
             }],
         });
+        setPublishProgress({
+            visible: true,
+            percent: 100,
+            text: "Falha ao publicar issues.",
+            indeterminate: false,
+        });
         setButtonLoading("saveBtn", false, "");
         return;
     }
 
+    setPublishProgress({
+        visible: true,
+        percent: 100,
+        text: `Publicação concluída (${Number(data.created || 0)} criada(s), ${Number(data.failed || 0)} falha(s)).`,
+        indeterminate: false,
+    });
     renderPublishResult(data);
     await fetchStatus();
     setButtonLoading("saveBtn", false, "");
@@ -346,6 +488,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const clearLogsBtn = document.getElementById("clearLogsBtn");
     const copyLogsBtn = document.getElementById("copyLogsBtn");
     const autoScrollInput = document.getElementById("autoScrollLogs");
+    setupProviderSelector();
     setupExtensionsDropdown();
     if (startBtn) startBtn.addEventListener("click", startJob);
     if (stopBtn) stopBtn.addEventListener("click", stopJob);
