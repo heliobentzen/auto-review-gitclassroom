@@ -77,6 +77,37 @@ class TestCodeReviewer:
         reviewer.review("owner/repo", {"main.py": "pass"})
         assert mock_ollama.call_args.args[0] == "http://ollama.local:11434/api/chat"
 
+    def test_review_prompt_includes_weighted_rubric(self, mock_ollama):
+        reviewer = CodeReviewer()
+        reviewer.review(
+            "owner/repo",
+            {"main.py": "print('ok')"},
+            "Atividade 1",
+            "Criar um programa que leia dois valores e mostre a soma.",
+        )
+        call_args = mock_ollama.call_args
+        system_content = call_args.kwargs["json"]["messages"][0]["content"]
+        user_content = call_args.kwargs["json"]["messages"][1]["content"]
+
+        assert "Estrutura e Sintaxe: 30%" in system_content
+        assert "Cumprimento dos Requisitos: 70%" in system_content
+        assert "não geram pontos adicionais" in user_content
+        assert "Nível de exigência: nível de ensino médio" in user_content
+
+    def test_review_prompt_accepts_higher_education_expectation(self, mock_ollama):
+        reviewer = CodeReviewer()
+        reviewer.review(
+            "owner/repo",
+            {"main.py": "print('ok')"},
+            "Atividade 1",
+            "Criar um programa que leia dois valores e mostre a soma.",
+            "ensino_superior",
+        )
+        call_args = mock_ollama.call_args
+        user_content = call_args.kwargs["json"]["messages"][1]["content"]
+
+        assert "Nível de exigência: nível de ensino superior" in user_content
+
     def test_format_files_truncates_long_content(self):
         long_content = "x" * 10_000
         formatted = CodeReviewer._format_files({"big.py": long_content}, max_chars_per_file=100)

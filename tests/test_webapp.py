@@ -10,7 +10,7 @@ def _new_job() -> str:
             id=job_id,
             assignment="10",
             instruction="",
-            analysis_level="intermediario",
+            analysis_level="ensino_medio",
             model="qwen2.5-coder:1.5b",
             extensions=[".kt"],
             status="ready_for_review",

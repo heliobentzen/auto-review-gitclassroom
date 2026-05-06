@@ -146,7 +146,7 @@ def _get_job(job_id: str) -> JobState | None:
 def _create_job(payload: dict[str, Any]) -> str:
     assignment = str(payload.get("assignment", "")).strip()
     instruction = str(payload.get("instruction", "")).strip()
-    analysis_level = str(payload.get("analysis_level", "intermediario")).strip()
+    analysis_level = str(payload.get("analysis_level", "ensino_medio")).strip()
     model = str(payload.get("model", "qwen2.5-coder:1.5b")).strip()
     extensions = payload.get("extensions") or [".kt"]
 

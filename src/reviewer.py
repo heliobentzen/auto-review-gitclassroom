@@ -10,40 +10,27 @@ import requests
 
 
 _REVIEW_SYSTEM_PROMPT = """\
-Você é um professor de desenvolvimento de software revisando código de estudantes.
+Você é professor de TI do IFPE (técnico integrado e superior em ADS) revisando código de alunos.
 
-Regras da análise:
-1. Escreva tudo em português do Brasil.
-2. Foque na execução da atividade pedida pelo professor.
-3. Avalie SOMENTE critérios explicitamente pedidos nas "Instruções do professor".
-4. Não cobre requisitos extras que não foram solicitados.
-5. NÃO penalize por ausência de arquitetura avançada, padrões de projeto, otimizações,
-     testes automatizados, segurança avançada, clean architecture, MVVM/MVI ou refatorações grandes,
-     a menos que isso esteja explicitamente nas instruções.
-6. Quando citar problemas, relacione cada um diretamente a um pedido da atividade.
-7. Se algum aspecto estiver fora do escopo, ignore esse aspecto.
-8. Não proponha soluções robustas/complexas (arquiteturas avançadas, padrões excessivos,
-     refatorações grandes). Priorize correções diretas e melhorias objetivas no escopo.
-9. Dê nota de 0 a 10 considerando o nível técnico do estudante e apenas o escopo pedido.
+DIRETRIZES DE AVALIAÇÃO:
+1. Idioma: Escreva tudo em Português do Brasil.
+2. Foco Estrito: Avalie APENAS o contido nas "Instruções do professor". Ignore o que estiver fora do escopo.
+3. Rubrica Obrigatória (Nota 0 a 10):
+   - Estrutura e Sintaxe (30% - 3,0 pts): Avalie uso correto da tecnologia, compilação, organização e boas práticas básicas.
+   - Cumprimento dos Requisitos (70% - 7,0 pts): Desconte proporcionalmente para cada exigência ausente ou implementada com estrutura incorreta (ex: usar contêiner vertical para layout lado a lado).
+4. Recursos Extras: Se o aluno implementar itens não solicitados (ex: navegação onde pedia-se apenas tela estática), elogie no feedback, mas NUNCA compense pontos perdidos no básico nem exceda a nota máxima (10).
+5. Omissões Permitidas: NÃO penalize ausência de arquitetura avançada, clean code, testes ou MVVM/MVI, salvo se explicitamente exigido.
+6. Feedback: Seja didático e encorajador. Relacione cada erro diretamente à instrução. Se a instrução do professor for ambígua/incompleta, seja conservador no desconto da nota.
 
-Formato obrigatório do conteúdo:
-- issue_title: título curto em português, sem exigir itens fora do escopo.
-- issue_body: Markdown com seções exatas:
-    ## Resumo
-    ## Problemas Encontrados
-    ## Melhorias Sugeridas
-- Em "Problemas Encontrados" e "Melhorias Sugeridas", descreva apenas itens ligados à instrução.
-- grade_comment: comentário curto explicando a nota com base apenas no que foi solicitado.
-
-Responda SOMENTE com um JSON válido, com estas chaves exatas:
+SAÍDA EXIGIDA:
+Retorne EXCLUSIVAMENTE um JSON válido, sem uso de blocos Markdown (```json), contendo as chaves exatas:
 {
-    "issue_title": "<título curto em português>",
-    "issue_body": "<Markdown em português com seções: ## Resumo, ## Problemas Encontrados, ## Melhorias Sugeridas>",
-    "grade": <número de 0 a 10>,
-    "grade_comment": "<comentário curto em português explicando a nota>"
+   "issue_title": "<título curto>",
+   "issue_body": "<Markdown com as seções exatas: ## Resumo, ## Cálculo da Nota (detalhando X/3.0, Y/7.0 e Z/10), ## Problemas Encontrados, ## Melhorias Sugeridas>",
+   "grade": <número float de 0.0 a 10.0>,
+   "grade_comment": "<comentário curto e didático justificando a nota com base na rubrica>"
 }
 """
-
 
 class CodeReviewer:
     """Uses Ollama to review source code and produce structured feedback."""
@@ -64,7 +51,7 @@ class CodeReviewer:
         files: dict[str, str],
         assignment_title: str = "",
         assignment_instruction: str = "",
-        analysis_level: str = "intermediario",
+        analysis_level: str = "ensino_medio",
     ) -> dict:
         """Review code files and return a structured feedback dict.
 
@@ -108,13 +95,26 @@ class CodeReviewer:
         analysis_level: str,
     ) -> str:
         code_block = self._format_files(files)
+        expectation_level = self._normalize_expectation_level(analysis_level)
         return (
-            f"Atividade: {assignment_title}\n"
-            f"Instruções do professor: {assignment_instruction or '(não informadas)'}\n"
-            f"Nível desejado da análise: {analysis_level}\n"
+            "Atue como um professor avaliando o código de um aluno do curso técnico em informática integrado ao ensino médio.\n\n"
+            f"Tarefa: {assignment_title or '(sem título informado)'}\n"
+            f"Instruções do professor: {assignment_instruction or '(não informadas)'}\n\n"
+            "Critérios de avaliação obrigatórios:\n"
+            "- Estrutura e Sintaxe: 30% da nota (0 a 3,0 pontos).\n"
+            "- Cumprimento dos Requisitos: 70% da nota (0 a 7,0 pontos).\n"
+            "- Recursos extras não geram pontos adicionais e não compensam requisitos faltantes.\n\n"
+            f"Nível de exigência: {expectation_level}\n"
             f"Repositório: {repo_name}\n\n"
-            f"Arquivos para revisar:\n\n{code_block}"
+            f"Código do aluno:\n\n{code_block}"
         )
+
+    @staticmethod
+    def _normalize_expectation_level(analysis_level: str) -> str:
+        normalized = str(analysis_level or "").strip().lower()
+        if normalized == "ensino_superior":
+            return "nível de ensino superior"
+        return "nível de ensino médio"
 
     def _request_review_content(self, user_message: str) -> str:
         response = requests.post(
