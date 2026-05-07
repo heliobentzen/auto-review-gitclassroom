@@ -124,7 +124,10 @@ class TestCodeReviewer:
         reviewer = CodeReviewer(model="google/gemini-2.0-flash")
         reviewer.review("owner/repo", {"main.py": "pass"})
 
-        assert "generativelanguage.googleapis.com" in mock_post.call_args.args[0]
+        assert (
+            mock_post.call_args.args[0]
+            == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+        )
 
     def test_review_prompt_includes_weighted_rubric(self, mock_ollama):
         reviewer = CodeReviewer()

@@ -58,7 +58,7 @@ Observacoes:
 
 1. OLLAMA_HOST e opcional (padrao local).
 2. OLLAMA_MODEL e opcional (sobrescreve padrao da aplicacao).
-3. GEMINI_API_KEY e obrigatoria apenas ao usar modelos Gemini no campo --model (ex.: gemini-2.0-flash).
+3. GEMINI_API_KEY e obrigatória apenas ao usar modelos Gemini no campo --model (ex.: gemini-2.0-flash).
 
 ## Uso via CLI
 
