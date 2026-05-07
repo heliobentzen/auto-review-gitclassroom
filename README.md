@@ -51,12 +51,14 @@ Crie um arquivo .env com:
 GITHUB_TOKEN=ghp_seu_token
 OLLAMA_HOST=http://localhost:11434
 OLLAMA_MODEL=qwen2.5-coder:7b
+GEMINI_API_KEY=your_gemini_api_key_here
 ```
 
 Observacoes:
 
 1. OLLAMA_HOST e opcional (padrao local).
 2. OLLAMA_MODEL e opcional (sobrescreve padrao da aplicacao).
+3. GEMINI_API_KEY e obrigatoria apenas ao usar modelos Gemini no campo --model (ex.: gemini-2.0-flash).
 
 ## Uso via CLI
 
