@@ -133,7 +133,9 @@ class CodeReviewer:
     def _request_gemini_review_content(self, user_message: str) -> str:
         api_key = os.getenv("GEMINI_API_KEY", "")
         if not api_key:
-            raise ValueError("GEMINI_API_KEY is required when using Gemini models.")
+            raise ValueError(
+                "GEMINI_API_KEY environment variable must be set when using Gemini models."
+            )
 
         response = requests.post(
             f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent",
@@ -152,7 +154,7 @@ class CodeReviewer:
         return str(parts[0].get("text", ""))
 
     def _is_gemini_model(self) -> bool:
-        model_name = self.model.strip().lower()
+        model_name = self.model.strip().lower().split("/", 1)[-1]
         return model_name.startswith("gemini")
 
     def _build_payload(self, user_message: str) -> dict[str, Any]:

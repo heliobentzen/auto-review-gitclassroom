@@ -111,6 +111,21 @@ class TestCodeReviewer:
 
         mock_post.assert_not_called()
 
+    def test_review_detects_gemini_model_with_provider_prefix(self, monkeypatch, mocker):
+        monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
+        mock_response = mocker.MagicMock()
+        mock_response.json.return_value = {
+            "candidates": [
+                {"content": {"parts": [{"text": json.dumps(_SAMPLE_REVIEW)}]}}
+            ]
+        }
+        mock_post = mocker.patch("src.reviewer.requests.post", return_value=mock_response)
+
+        reviewer = CodeReviewer(model="google/gemini-2.0-flash")
+        reviewer.review("owner/repo", {"main.py": "pass"})
+
+        assert "generativelanguage.googleapis.com" in mock_post.call_args.args[0]
+
     def test_review_prompt_includes_weighted_rubric(self, mock_ollama):
         reviewer = CodeReviewer()
         reviewer.review(
