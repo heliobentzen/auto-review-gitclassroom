@@ -77,6 +77,58 @@ class TestCodeReviewer:
         reviewer.review("owner/repo", {"main.py": "pass"})
         assert mock_ollama.call_args.args[0] == "http://ollama.local:11434/api/chat"
 
+    def test_review_uses_gemini_endpoint_for_gemini_models(self, monkeypatch, mocker):
+        monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
+        mock_response = mocker.MagicMock()
+        mock_response.json.return_value = {
+            "candidates": [
+                {"content": {"parts": [{"text": json.dumps(_SAMPLE_REVIEW)}]}}
+            ]
+        }
+        mock_post = mocker.patch("src.reviewer.requests.post", return_value=mock_response)
+
+        reviewer = CodeReviewer(model="gemini-2.0-flash")
+        reviewer.review("owner/repo", {"main.py": "pass"})
+
+        call_args = mock_post.call_args
+        assert (
+            call_args.args[0]
+            == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+        )
+        assert call_args.kwargs["headers"]["x-goog-api-key"] == "gemini-key"
+        assert (
+            call_args.kwargs["json"]["generationConfig"]["responseMimeType"]
+            == "application/json"
+        )
+
+    def test_review_requires_gemini_api_key(self, monkeypatch, mocker):
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        mock_post = mocker.patch("src.reviewer.requests.post")
+        reviewer = CodeReviewer(model="gemini-2.0-flash")
+
+        with pytest.raises(ValueError, match="GEMINI_API_KEY"):
+            reviewer.review("owner/repo", {"main.py": "pass"})
+
+        mock_post.assert_not_called()
+
+    def test_review_detects_gemini_model_with_provider_prefix(self, monkeypatch, mocker):
+        monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
+        mock_response = mocker.MagicMock()
+        mock_response.json.return_value = {
+            "candidates": [
+                {"content": {"parts": [{"text": json.dumps(_SAMPLE_REVIEW)}]}}
+            ]
+        }
+        mock_post = mocker.patch("src.reviewer.requests.post", return_value=mock_response)
+
+        reviewer = CodeReviewer(model="google/gemini-2.0-flash")
+        reviewer.review("owner/repo", {"main.py": "pass"})
+
+        assert (
+            mock_post.call_args.args[0]
+            == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+        )
+
     def test_review_prompt_includes_weighted_rubric(self, mock_ollama):
         reviewer = CodeReviewer()
         reviewer.review(

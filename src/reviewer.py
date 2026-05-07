@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any
 
@@ -117,6 +118,9 @@ class CodeReviewer:
         return "nível de ensino médio"
 
     def _request_review_content(self, user_message: str) -> str:
+        if self._is_gemini_model():
+            return self._request_gemini_review_content(user_message)
+
         response = requests.post(
             f"{self.base_url}/api/chat",
             json=self._build_payload(user_message),
@@ -125,6 +129,37 @@ class CodeReviewer:
         response.raise_for_status()
         data: dict[str, Any] = response.json()
         return str(data.get("message", {}).get("content", ""))
+
+    def _request_gemini_review_content(self, user_message: str) -> str:
+        api_key = os.getenv("GEMINI_API_KEY", "")
+        if not api_key:
+            raise ValueError(
+                "GEMINI_API_KEY environment variable must be set when using Gemini models."
+            )
+        model_name = self._gemini_model_name()
+
+        response = requests.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent",
+            json=self._build_gemini_payload(user_message),
+            headers={"x-goog-api-key": api_key},
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        data: dict[str, Any] = response.json()
+        candidates = data.get("candidates", [])
+        if not candidates:
+            return ""
+        parts = candidates[0].get("content", {}).get("parts", [])
+        if not parts:
+            return ""
+        return str(parts[0].get("text", ""))
+
+    def _is_gemini_model(self) -> bool:
+        model_name = self._gemini_model_name().lower()
+        return model_name.startswith("gemini")
+
+    def _gemini_model_name(self) -> str:
+        return self.model.strip().split("/", 1)[-1]
 
     def _build_payload(self, user_message: str) -> dict[str, Any]:
         return {
@@ -136,6 +171,16 @@ class CodeReviewer:
                 {"role": "user", "content": user_message},
             ],
             "options": {"temperature": 0.2},
+        }
+
+    def _build_gemini_payload(self, user_message: str) -> dict[str, Any]:
+        return {
+            "system_instruction": {"parts": [{"text": _REVIEW_SYSTEM_PROMPT}]},
+            "contents": [{"parts": [{"text": user_message}]}],
+            "generationConfig": {
+                "temperature": 0.2,
+                "responseMimeType": "application/json",
+            },
         }
 
     @staticmethod
