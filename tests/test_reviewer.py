@@ -93,8 +93,9 @@ class TestCodeReviewer:
         call_args = mock_post.call_args
         assert (
             call_args.args[0]
-            == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=gemini-key"
+            == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
         )
+        assert call_args.kwargs["headers"]["x-goog-api-key"] == "gemini-key"
         assert (
             call_args.kwargs["json"]["generationConfig"]["responseMimeType"]
             == "application/json"
