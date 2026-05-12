@@ -11,7 +11,7 @@ Optional environment variables:
     OLLAMA_HOST    — Ollama server URL (default: http://localhost:11434)
     OLLAMA_MODEL   — Ollama model name (default: qwen2.5-coder:7b)
     GEMINI_API_KEY — Gemini API key (required only when --provider gemini)
-    GEMINI_MODEL   — Gemini model name (default: gemini-1.5-flash)
+    GEMINI_MODEL   — Gemini model name (default: gemini-2.5-flash)
 """
 
 from __future__ import annotations
@@ -206,7 +206,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--model",
         default="",
-        help="Model name for selected provider (e.g. qwen2.5-coder:7b or gemini-1.5-flash).",
+        help="Model name for selected provider (e.g. qwen2.5-coder:7b or gemini-2.5-flash).",
     )
     parser.add_argument(
         "--instruction",
@@ -230,6 +230,7 @@ def main(argv: list[str] | None = None) -> None:
     github_token = config.github_token
     ollama_host = config.ollama_host
     gemini_api_key = config.gemini_api_key
+    gemini_model = config.gemini_model
     provider = args.provider
 
     model = args.model.strip()
@@ -258,6 +259,7 @@ def main(argv: list[str] | None = None) -> None:
         model=model,
         base_url=ollama_host,
         gemini_api_key=gemini_api_key,
+        gemini_model=gemini_model,
     )
     reporter = GradeReporter()
 

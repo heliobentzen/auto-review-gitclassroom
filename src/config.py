@@ -22,13 +22,13 @@ class AppConfig:
     @classmethod
     def from_env(cls, *, load_dotenv_file: bool = True) -> "AppConfig":
         if load_dotenv_file:
-            load_dotenv()
+            load_dotenv(override=True)
 
         return cls(
             github_token=os.getenv("GITHUB_TOKEN", ""),
             ollama_host=os.getenv("OLLAMA_HOST", "http://localhost:11434"),
             ollama_model=os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b"),
             gemini_api_key=os.getenv("GEMINI_API_KEY", ""),
-            gemini_model=os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),
+            gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
             app_base_path=os.getenv("APP_BASE_PATH", ""),
         )

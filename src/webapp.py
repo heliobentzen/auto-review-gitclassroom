@@ -9,8 +9,10 @@ Flow:
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
+import traceback
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,6 +28,12 @@ from .main import _resolve_assignment_id
 from .reviewer import CodeReviewer
 
 load_dotenv()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 _STATIC_INDEX_PATH = Path(__file__).resolve().parent / "static" / "index.html"
@@ -158,7 +166,7 @@ def _create_job(payload: dict[str, Any]) -> str:
     else:
         provider = "ollama"
 
-    default_model = "qwen2.5-coder:1.5b" if provider == "ollama" else "gemini-1.5-flash"
+    default_model = "qwen2.5-coder:1.5b" if provider == "ollama" else "gemini-2.5-flash"
     model = raw_model or default_model
 
     # Se o modelo for Gemini, force o roteamento para Gemini para evitar erro em /api/chat.
@@ -284,7 +292,7 @@ def _publish_issues_for_job(
 
 
 def _run_preview(job_id: str) -> None:
-    config = AppConfig.from_env(load_dotenv_file=False)
+    config = AppConfig.from_env(load_dotenv_file=True)
     token = config.github_token
     if not token:
         _set_job_error(job_id, "GITHUB_TOKEN não configurado.")
@@ -292,6 +300,7 @@ def _run_preview(job_id: str) -> None:
 
     ollama_host = config.ollama_host
     gemini_api_key = config.gemini_api_key
+    gemini_model = config.gemini_model
 
     with JOBS_LOCK:
         job = JOBS[job_id]
@@ -313,6 +322,7 @@ def _run_preview(job_id: str) -> None:
         model=model,
         base_url=ollama_host,
         gemini_api_key=gemini_api_key,
+        gemini_model=gemini_model,
     )
 
     try:
@@ -321,6 +331,7 @@ def _run_preview(job_id: str) -> None:
         assignment_title = assignment_data.get("title", f"Atividade {assignment_id}")
 
         _append_log(job_id, f"Carregando atividade {assignment_id} …")
+        _append_log(job_id, f"Provedor: {provider} | Modelo: {model}")
         _append_log(job_id, f"Atividade: {assignment_title}")
         _append_log(job_id, "Buscando submissões dos alunos …")
 
@@ -383,12 +394,20 @@ def _run_preview(job_id: str) -> None:
                 )
 
             except Exception as exc:  # noqa: BLE001
-                _append_log(job_id, f"  Erro: {exc}")
+                tb = traceback.format_exc()
+                logger.error(
+                    "Erro ao revisar %s (aluno %s):\n%s",
+                    repo_full_name, student_login, tb,
+                )
+                _append_log(job_id, f"  Erro ao revisar {student_login}: {exc}")
+                _append_log(job_id, f"  Detalhes: {tb[-300:]}")
 
         _set_job_done(job_id)
 
     except Exception as exc:  # noqa: BLE001
-        _set_job_error(job_id, str(exc))
+        tb = traceback.format_exc()
+        logger.error("Erro fatal no job %s:\n%s", job_id, tb)
+        _set_job_error(job_id, f"{exc}\n\nDetalhes: {tb[-400:]}")
 
 
 @app.get("/")

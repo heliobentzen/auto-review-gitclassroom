@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
+import time
 from typing import Any
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 
 _REVIEW_SYSTEM_PROMPT = """\
@@ -54,12 +58,14 @@ class CodeReviewer:
         base_url: str = "http://localhost:11434",
         provider: str = "ollama",
         gemini_api_key: str = "",
+        gemini_model: str = "gemini-2.5-flash",
         timeout: int = 300,
     ) -> None:
         self.provider = str(provider or "ollama").strip().lower()
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.gemini_api_key = gemini_api_key
+        self.gemini_model = str(gemini_model or "gemini-2.5-flash").strip()
         self.timeout = timeout
 
     def review(
@@ -95,7 +101,10 @@ class CodeReviewer:
         )
         content = self._request_review_content(user_message)
         if not content:
-            raise ValueError("Ollama returned an empty response.")
+            raise ValueError(
+                f"{self.provider.capitalize()} retornou resposta vazia. "
+                "O modelo pode ter filtrado o conteúdo ou o prompt excedeu o limite."
+            )
         return self._parse_json_response(content)
 
     # ------------------------------------------------------------------
@@ -142,6 +151,10 @@ class CodeReviewer:
         return "nível de ensino médio"
 
     def _request_review_content(self, user_message: str) -> str:
+        model_hint = self._normalize_gemini_model_name(self.model).lower()
+        if model_hint.startswith("gemini"):
+            return self._request_gemini_content(user_message)
+
         if self.provider == "gemini":
             return self._request_gemini_content(user_message)
         if self.provider != "ollama":
@@ -153,62 +166,246 @@ class CodeReviewer:
         chat_endpoint = f"{self.base_url}/api/chat"
         generate_endpoint = f"{self.base_url}/api/generate"
 
-        response = requests.post(
-            chat_endpoint,
-            json=self._build_ollama_payload(user_message),
-            timeout=self.timeout,
-        )
-
+        chat_response: Any | None = None
         try:
-            response.raise_for_status()
-            data: dict[str, Any] = response.json()
+            chat_response = requests.post(
+                chat_endpoint,
+                json=self._build_ollama_payload(user_message),
+                timeout=self.timeout,
+            )
+
+            chat_response.raise_for_status()
+            data: dict[str, Any] = chat_response.json()
             return str(data.get("message", {}).get("content", ""))
         except requests.HTTPError as exc:
             status_code = getattr(getattr(exc, "response", None), "status_code", None)
+            if status_code is None and chat_response is not None:
+                status_code = getattr(chat_response, "status_code", None)
+
+            # Se não for 404, tenta Gemini (quando disponível) antes de propagar.
             if status_code != 404:
+                if self.gemini_api_key:
+                    return self._request_gemini_content(
+                        user_message,
+                        model_name=self._resolve_gemini_model_name(),
+                    )
                 raise
 
-        # Compatibilidade com servidores que expõem apenas /api/generate.
-        fallback_response = requests.post(
-            generate_endpoint,
-            json=self._build_ollama_generate_payload(user_message),
-            timeout=self.timeout,
-        )
-        try:
-            fallback_response.raise_for_status()
-        except requests.HTTPError as exc:
-            raise requests.HTTPError(
-                "Falha ao acessar Ollama. O endpoint /api/chat retornou 404 e o fallback "
-                f"/api/generate também falhou em {self.base_url}."
-            ) from exc
+            # /api/chat não existe em algumas instalações antigas.
+            try:
+                fallback_response = requests.post(
+                    generate_endpoint,
+                    json=self._build_ollama_generate_payload(user_message),
+                    timeout=self.timeout,
+                )
+                fallback_response.raise_for_status()
+                fallback_data: dict[str, Any] = fallback_response.json()
+                return str(fallback_data.get("response", ""))
+            except requests.RequestException as fallback_exc:
+                # Segurança operacional: se Ollama falhar e houver chave Gemini,
+                # tenta Gemini automaticamente para evitar interrupção da turma.
+                if self.gemini_api_key:
+                    return self._request_gemini_content(
+                        user_message,
+                        model_name=self._resolve_gemini_model_name(),
+                    )
+                raise requests.HTTPError(
+                    "Falha ao acessar Ollama. O endpoint /api/chat retornou 404 e o fallback "
+                    f"/api/generate também falhou em {self.base_url}."
+                ) from fallback_exc
+        except requests.RequestException:
+            # Se Ollama falhar e houver chave Gemini, tenta Gemini automaticamente.
+            if self.gemini_api_key:
+                return self._request_gemini_content(
+                    user_message,
+                    model_name=self._resolve_gemini_model_name(),
+                )
+            raise
 
-        fallback_data: dict[str, Any] = fallback_response.json()
-        return str(fallback_data.get("response", ""))
+    def _resolve_gemini_model_name(self) -> str:
+        model_hint = self._normalize_gemini_model_name(self.model).lower()
+        if model_hint.startswith("gemini"):
+            return self._normalize_gemini_model_name(self.model)
+        return self._normalize_gemini_model_name(self.gemini_model)
 
-    def _request_gemini_content(self, user_message: str) -> str:
+    @staticmethod
+    def _normalize_gemini_model_name(model_name: str) -> str:
+        normalized = str(model_name or "").strip()
+        if normalized.startswith("models/"):
+            normalized = normalized[len("models/"):]
+
+        legacy_aliases = {
+            "gemini-1.5-flash": "gemini-2.5-flash",
+            "gemini-1.5-pro": "gemini-2.5-pro",
+        }
+        return legacy_aliases.get(normalized, normalized)
+
+    _GEMINI_MAX_RETRIES = 4
+    _GEMINI_RETRY_BASE_DELAY = 2  # seconds
+    _GEMINI_RETRYABLE_STATUS_CODES = {429, 500, 502, 503}
+
+    def _request_gemini_content(self, user_message: str, model_name: str | None = None) -> str:
         if not self.gemini_api_key:
             raise ValueError("GEMINI_API_KEY não configurado para o provedor Gemini.")
 
-        endpoint = (
-            f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
-            f"?key={self.gemini_api_key}"
+        resolved_model = str(model_name or self._resolve_gemini_model_name()).strip()
+        if not resolved_model:
+            resolved_model = "gemini-2.5-flash"
+
+        endpoints = [
+            f"https://generativelanguage.googleapis.com/v1beta/models/{resolved_model}:generateContent",
+            f"https://generativelanguage.googleapis.com/v1/models/{resolved_model}:generateContent",
+        ]
+        model_candidates = [resolved_model]
+        if resolved_model == "gemini-2.5-flash":
+            model_candidates.append("gemini-2.0-flash")
+
+        last_error: Exception | None = None
+        for candidate_model in model_candidates:
+            for endpoint in endpoints:
+                current_endpoint = endpoint.replace(f"/{resolved_model}:", f"/{candidate_model}:")
+                result = self._gemini_post_with_retry(current_endpoint, user_message, candidate_model)
+                if result is not None:
+                    return result
+
+        # Todas as combinações falharam.
+        if last_error is not None:
+            raise ValueError(
+                "Não foi possível obter resposta válida do Gemini. "
+                f"Modelos tentados: {', '.join(model_candidates)}. "
+                "Verifique se a chave tem acesso ao modelo e tente definir GEMINI_MODEL=gemini-2.0-flash."
+            ) from last_error
+        raise ValueError(
+            "Todas as tentativas de chamar a API Gemini falharam. "
+            "Isso geralmente indica um erro 400 (Bad Request) persistente "
+            "(ex: chave de API expirada ou payload inválido). Verifique os logs do terminal."
         )
 
-        response = requests.post(
-            endpoint,
-            json=self._build_gemini_payload(user_message),
-            timeout=self.timeout,
+    def _gemini_post_with_retry(
+        self,
+        endpoint: str,
+        user_message: str,
+        candidate_model: str,
+    ) -> str | None:
+        """POST to a single Gemini endpoint with retry + exponential backoff.
+
+        Returns the extracted text on success, ``None`` if the endpoint/model
+        is unavailable (400/404) so the caller can try the next candidate,
+        or raises on non-retryable errors.
+        """
+        last_exc: Exception | None = None
+        for attempt in range(1, self._GEMINI_MAX_RETRIES + 1):
+            try:
+                response = requests.post(
+                    endpoint,
+                    json=self._build_gemini_payload(user_message),
+                    headers={"x-goog-api-key": self.gemini_api_key},
+                    timeout=self.timeout,
+                )
+            except requests.RequestException as exc:
+                last_exc = exc
+                logger.warning(
+                    "Gemini request failed (attempt %d/%d, model=%s): %s",
+                    attempt, self._GEMINI_MAX_RETRIES, candidate_model, exc,
+                )
+                if attempt < self._GEMINI_MAX_RETRIES:
+                    self._backoff_sleep(attempt)
+                continue
+
+            status_code = response.status_code
+
+            # Modelo/endpoint indisponível — tentar próximo candidato.
+            if status_code in {400, 404}:
+                error_text = response.text.strip()
+                if "API key expired" in error_text or "API_KEY_INVALID" in error_text:
+                    raise ValueError(
+                        "CHAVE DE API DO GEMINI EXPIRADA OU INVÁLIDA! "
+                        "Acesse https://aistudio.google.com/app/apikey para gerar uma nova "
+                        "e atualize a variável GEMINI_API_KEY no arquivo .env."
+                    )
+                logger.info(
+                    "Gemini endpoint retornou %d para model=%s, erro: %s. Tentando próximo...",
+                    status_code, candidate_model, error_text[:300],
+                )
+                return None
+
+            # Rate limit ou erro de servidor — retry com backoff.
+            if status_code in self._GEMINI_RETRYABLE_STATUS_CODES:
+                delay = self._backoff_delay(attempt)
+                logger.warning(
+                    "Gemini retornou %d (attempt %d/%d, model=%s). "
+                    "Aguardando %.1fs antes de tentar novamente...",
+                    status_code, attempt, self._GEMINI_MAX_RETRIES,
+                    candidate_model, delay,
+                )
+                if attempt < self._GEMINI_MAX_RETRIES:
+                    time.sleep(delay)
+                    continue
+                # Última tentativa — cai no raise abaixo.
+
+            # Sucesso
+            if response.ok:
+                data: dict[str, Any] = response.json()
+                candidates = data.get("candidates") or []
+
+                # Resposta vazia — pode ser filtro de conteúdo ou safety block.
+                if not candidates:
+                    block_reason = (
+                        data.get("promptFeedback", {}).get("blockReason", "")
+                    )
+                    logger.warning(
+                        "Gemini retornou 0 candidates (attempt %d/%d, model=%s). "
+                        "blockReason=%s, promptFeedback=%s",
+                        attempt, self._GEMINI_MAX_RETRIES, candidate_model,
+                        block_reason, data.get("promptFeedback"),
+                    )
+                    # Retry — às vezes é intermitente.
+                    if attempt < self._GEMINI_MAX_RETRIES:
+                        self._backoff_sleep(attempt)
+                        continue
+                    # Esgotou retries, retorna vazio para a mensagem correta.
+                    return ""
+
+                parts = candidates[0].get("content", {}).get("parts") or []
+                texts = [str(part.get("text", "")) for part in parts if part.get("text")]
+                result_text = "\n".join(texts).strip()
+
+                # Texto vazio mesmo com candidates presentes.
+                if not result_text:
+                    finish_reason = candidates[0].get("finishReason", "")
+                    logger.warning(
+                        "Gemini retornou texto vazio (attempt %d/%d, model=%s, "
+                        "finishReason=%s).",
+                        attempt, self._GEMINI_MAX_RETRIES, candidate_model,
+                        finish_reason,
+                    )
+                    if attempt < self._GEMINI_MAX_RETRIES:
+                        self._backoff_sleep(attempt)
+                        continue
+
+                return result_text
+
+            # Erro não-retryável (401, 403, etc.)
+            error_text = response.text.strip()
+            raise ValueError(
+                "Falha ao chamar Gemini API. "
+                f"status={status_code}, model={candidate_model}, "
+                f"endpoint={endpoint}, detalhe={error_text[:500]}"
+            )
+
+        # Esgotou todas as tentativas de retry.
+        raise ValueError(
+            f"Gemini API indisponível após {self._GEMINI_MAX_RETRIES} tentativas "
+            f"(model={candidate_model}, endpoint={endpoint}). "
+            f"Último erro: {last_exc}"
         )
-        response.raise_for_status()
-        data: dict[str, Any] = response.json()
 
-        candidates = data.get("candidates") or []
-        if not candidates:
-            return ""
+    def _backoff_delay(self, attempt: int) -> float:
+        """Exponential backoff: 2s, 4s, 8s, 16s."""
+        return float(self._GEMINI_RETRY_BASE_DELAY * (2 ** (attempt - 1)))
 
-        parts = candidates[0].get("content", {}).get("parts") or []
-        texts = [str(part.get("text", "")) for part in parts if part.get("text")]
-        return "\n".join(texts).strip()
+    def _backoff_sleep(self, attempt: int) -> None:
+        time.sleep(self._backoff_delay(attempt))
 
     def _build_ollama_payload(self, user_message: str) -> dict[str, Any]:
         return {
@@ -233,7 +430,7 @@ class CodeReviewer:
 
     def _build_gemini_payload(self, user_message: str) -> dict[str, Any]:
         return {
-            "system_instruction": {
+            "systemInstruction": {
                 "parts": [{"text": _REVIEW_SYSTEM_PROMPT}],
             },
             "contents": [
@@ -246,6 +443,12 @@ class CodeReviewer:
                 "temperature": 0.2,
                 "responseMimeType": "application/json",
             },
+            "safetySettings": [
+                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+            ],
         }
 
     @staticmethod
@@ -268,15 +471,48 @@ class CodeReviewer:
 
     @staticmethod
     def _parse_json_response(content: str) -> dict:
-        try:
-            return json.loads(content)
-        except json.JSONDecodeError:
-            # Some local models wrap JSON with extra text; recover the first object.
-            start = content.find("{")
-            end = content.rfind("}")
-            if start == -1 or end == -1 or end <= start:
-                raise
+        # Strip BOM and surrounding whitespace.
+        cleaned = content.strip().lstrip("\ufeff")
 
-            candidate = content[start : end + 1]
-            candidate = re.sub(r",\s*([}\]])", r"\1", candidate)
+        # 1. Try direct parse first.
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            pass
+
+        # 2. Strip markdown code fences (```json ... ``` or ``` ... ```).
+        md_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", cleaned, re.DOTALL)
+        if md_match:
+            try:
+                return json.loads(md_match.group(1).strip())
+            except json.JSONDecodeError:
+                pass
+
+        # 3. Extract first JSON object from surrounding text.
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            raise json.JSONDecodeError(
+                "No JSON object found in response", cleaned, 0,
+            )
+
+        candidate = cleaned[start : end + 1]
+        # Remove trailing commas before } or ] (common LLM mistake).
+        candidate = re.sub(r",\s*([}\]])", r"\1", candidate)
+
+        try:
             return json.loads(candidate)
+        except json.JSONDecodeError:
+            # 4. Last resort: try fixing common issues (unescaped newlines in strings).
+            sanitized = candidate.replace("\r\n", "\\n").replace("\r", "\\n")
+            # Only replace actual newlines inside string values, not structural ones.
+            # This is a best-effort heuristic.
+            try:
+                return json.loads(sanitized)
+            except json.JSONDecodeError:
+                logger.error(
+                    "Failed to parse JSON response from LLM. "
+                    "Raw content (first 500 chars): %s",
+                    content[:500],
+                )
+                raise

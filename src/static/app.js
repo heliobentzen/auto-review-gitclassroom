@@ -11,7 +11,7 @@ const APP_CONFIG = window.__APP_CONFIG__ || {};
 const API_BASE = APP_CONFIG.apiBase || "/api";
 const DEFAULT_MODELS_BY_PROVIDER = {
     ollama: "qwen2.5-coder:1.5b",
-    gemini: "gemini-1.5-flash",
+    gemini: "gemini-2.5-flash",
 };
 
 async function apiRequest(path, options = {}) {
@@ -187,7 +187,8 @@ function renderExtensionsOptions() {
 function setupExtensionsDropdown() {
     const btn = document.getElementById("extensionsDropdownBtn");
     const menu = document.getElementById("extensionsDropdownMenu");
-    if (!btn || !menu) return;
+    const searchInput = document.getElementById("extensionsSearch");
+    if (!btn || !menu || !searchInput) return;
 
     renderExtensionsOptions();
     updateExtensionsSummary();
@@ -195,10 +196,26 @@ function setupExtensionsDropdown() {
     btn.addEventListener("click", (event) => {
         event.stopPropagation();
         menu.classList.toggle("hidden");
+        if (!menu.classList.contains("hidden")) {
+            searchInput.focus();
+        }
     });
 
     menu.addEventListener("click", (event) => {
         event.stopPropagation();
+    });
+
+    searchInput.addEventListener("input", (e) => {
+        const query = e.target.value.toLowerCase();
+        const labels = document.getElementById("extensionsList").querySelectorAll("label");
+        labels.forEach(label => {
+            const span = label.querySelector("span");
+            if (span && span.textContent.toLowerCase().includes(query)) {
+                label.style.display = "flex";
+            } else {
+                label.style.display = "none";
+            }
+        });
     });
 
     document.addEventListener("click", () => {
@@ -251,6 +268,10 @@ async function startJob() {
     document.getElementById("publishResult").style.display = "none";
     setStopBtnState(true);
     document.getElementById("reviewCard").style.display = "none";
+    const reviewPlaceholder = document.getElementById("reviewPlaceholder");
+    if (reviewPlaceholder) {
+        reviewPlaceholder.style.display = "flex";
+    }
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = setInterval(fetchStatus, 1500);
     await fetchStatus();
@@ -315,7 +336,16 @@ async function fetchStatus() {
     const drafts = data.drafts || [];
     if (drafts.length > 0) {
         document.getElementById("reviewCard").style.display = "block";
+        const reviewPlaceholder = document.getElementById("reviewPlaceholder");
+        if (reviewPlaceholder) {
+            reviewPlaceholder.style.display = "none";
+        }
         renderDrafts(drafts);
+    } else {
+        const reviewPlaceholder = document.getElementById("reviewPlaceholder");
+        if (reviewPlaceholder) {
+            reviewPlaceholder.style.display = "flex";
+        }
     }
 
     setSaveButtonEnabled(data.status === "ready_for_review" && drafts.length > 0);

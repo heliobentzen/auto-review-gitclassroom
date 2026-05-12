@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import logging
+import time
+
 import requests
+
+logger = logging.getLogger(__name__)
 
 
 class ClassroomClient:
@@ -14,6 +19,9 @@ class ClassroomClient:
     """
 
     BASE_URL = "https://api.github.com"
+    _MAX_RETRIES = 3
+    _RETRY_BASE_DELAY = 2  # seconds
+    _RETRYABLE_STATUS_CODES = {429, 500, 502, 503}
 
     def __init__(self, token: str, timeout: int = 30) -> None:
         self.session = requests.Session()
@@ -27,13 +35,40 @@ class ClassroomClient:
         )
 
     def _get_json(self, path: str, *, params: dict | None = None) -> list[dict] | dict:
-        resp = self.session.get(
-            f"{self.BASE_URL}{path}",
-            params=params,
-            timeout=self.timeout,
-        )
-        resp.raise_for_status()
-        return resp.json()
+        url = f"{self.BASE_URL}{path}"
+        last_exc: Exception | None = None
+
+        for attempt in range(1, self._MAX_RETRIES + 1):
+            try:
+                resp = self.session.get(url, params=params, timeout=self.timeout)
+            except requests.RequestException as exc:
+                last_exc = exc
+                logger.warning(
+                    "GitHub request failed (attempt %d/%d, url=%s): %s",
+                    attempt, self._MAX_RETRIES, url, exc,
+                )
+                if attempt < self._MAX_RETRIES:
+                    time.sleep(self._RETRY_BASE_DELAY * (2 ** (attempt - 1)))
+                continue
+
+            if resp.status_code in self._RETRYABLE_STATUS_CODES:
+                delay = self._RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                logger.warning(
+                    "GitHub retornou %d (attempt %d/%d, url=%s). "
+                    "Aguardando %ds...",
+                    resp.status_code, attempt, self._MAX_RETRIES, url, delay,
+                )
+                if attempt < self._MAX_RETRIES:
+                    time.sleep(delay)
+                    continue
+
+            resp.raise_for_status()
+            return resp.json()
+
+        # Esgotou retries por erro de conexão.
+        raise requests.ConnectionError(
+            f"GitHub API indisponível após {self._MAX_RETRIES} tentativas: {last_exc}"
+        ) from last_exc
 
     def list_classrooms(self) -> list[dict]:
         """Return all classrooms accessible to the authenticated user."""
