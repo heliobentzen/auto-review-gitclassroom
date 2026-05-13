@@ -487,13 +487,12 @@ class CodeReviewer:
                     omitted_files += 1
                     continue
 
-                adjusted = truncated[:available_for_content]
-                if adjusted != truncated and not adjusted.endswith("\n... [truncated]"):
-                    suffix = "\n... [truncated]"
-                    if len(adjusted) > len(suffix):
-                        adjusted = adjusted[: len(adjusted) - len(suffix)] + suffix
-                    else:
-                        adjusted = adjusted[:available_for_content]
+                suffix = "\n... [truncated]"
+                was_truncated_by_budget = len(truncated) > available_for_content
+                if was_truncated_by_budget and available_for_content > len(suffix):
+                    adjusted = truncated[: available_for_content - len(suffix)] + suffix
+                else:
+                    adjusted = truncated[:available_for_content]
                 block = f"{code_header}{adjusted}{code_footer}"
 
             parts.append(block)
