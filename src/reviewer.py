@@ -488,8 +488,8 @@ class CodeReviewer:
                     continue
 
                 suffix = "\n... [truncated]"
-                was_truncated_by_budget = len(truncated) > available_for_content
-                if was_truncated_by_budget and available_for_content > len(suffix):
+                needs_truncation = len(truncated) > available_for_content
+                if needs_truncation and available_for_content >= len(suffix):
                     adjusted = truncated[: available_for_content - len(suffix)] + suffix
                 else:
                     adjusted = truncated[:available_for_content]
