@@ -455,17 +455,51 @@ class CodeReviewer:
     def _format_files(
         files: dict[str, str],
         max_chars_per_file: int = 3_000,
+        max_total_chars: int = 15_000,
     ) -> str:
         """Render files as fenced code blocks for the prompt."""
         if not files:
             return "(no source files found)"
 
         parts: list[str] = []
+        used_chars = 0
+        omitted_files = 0
+
         for path, content in files.items():
+            if used_chars >= max_total_chars:
+                omitted_files += 1
+                continue
+
             truncated = content[:max_chars_per_file]
             if len(content) > max_chars_per_file:
                 truncated += "\n... [truncated]"
-            parts.append(f"### `{path}`\n```\n{truncated}\n```")
+
+            block = f"### `{path}`\n```\n{truncated}\n```"
+            remaining_chars = max_total_chars - used_chars
+
+            if len(block) > remaining_chars:
+                # Mantém a estrutura do bloco e ajusta só o conteúdo final.
+                code_header = f"### `{path}`\n```\n"
+                code_footer = "\n```"
+                available_for_content = remaining_chars - len(code_header) - len(code_footer)
+
+                if available_for_content <= 0:
+                    omitted_files += 1
+                    continue
+
+                suffix = "\n... [truncated]"
+                needs_truncation = len(truncated) > available_for_content
+                if needs_truncation and available_for_content >= len(suffix):
+                    adjusted = truncated[: available_for_content - len(suffix)] + suffix
+                else:
+                    adjusted = truncated[:available_for_content]
+                block = f"{code_header}{adjusted}{code_footer}"
+
+            parts.append(block)
+            used_chars += len(block)
+
+        if omitted_files:
+            parts.append(f"... [{omitted_files} arquivo(s) omitido(s) para manter o prompt enxuto]")
 
         return "\n\n".join(parts)
 

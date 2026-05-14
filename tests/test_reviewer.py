@@ -326,3 +326,14 @@ class TestCodeReviewer:
     def test_format_files_includes_path(self):
         result = CodeReviewer._format_files({"path/to/code.py": "print(1)"})
         assert "path/to/code.py" in result
+
+    def test_format_files_limits_total_payload_and_reports_omission(self):
+        files = {
+            "a.py": "a" * 200,
+            "b.py": "b" * 200,
+            "c.py": "c" * 200,
+        }
+        result = CodeReviewer._format_files(files, max_chars_per_file=200, max_total_chars=300)
+
+        assert "... [truncated]" in result
+        assert "arquivo(s) omitido(s)" in result
